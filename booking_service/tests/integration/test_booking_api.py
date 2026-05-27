@@ -5,9 +5,9 @@ import httpx
 import pytest
 from jose import jwt
 
+from core.config import settings
+
 BASE_URL = "http://127.0.0.1:8010"
-SECRET = "change_me"
-ALGORITHM = "HS256"
 
 
 def create_token(user_id: str) -> str:
@@ -19,7 +19,11 @@ def create_token(user_id: str) -> str:
         "exp": int((now + timedelta(hours=12)).timestamp()),
         "jti": str(uuid4()),
     }
-    return jwt.encode(payload, SECRET, algorithm=ALGORITHM)
+    return jwt.encode(
+        payload,
+        settings.auth_jwt_secret,
+        algorithm=settings.auth_jwt_algorithm,
+    )
 
 
 @pytest.fixture()
@@ -116,6 +120,9 @@ def test_booking_flow(user_headers: dict[str, str]) -> None:
     assert cancel_event_response.status_code == 200
     assert cancel_event_response.json()["status"] == "cancelled"
 
+    cancelled_event_detail_response = httpx.get(f"{BASE_URL}/api/v1/events/{event_id}")
+    assert cancelled_event_detail_response.status_code == 404
+
     cancelled_event_booking_response = httpx.post(
         f"{BASE_URL}/api/v1/events/{event_id}/booking",
         headers=user_headers,
@@ -151,3 +158,26 @@ def test_only_host_can_cancel_event(
     )
 
     assert forbidden_response.status_code == 403
+
+
+def test_auth_required_for_create_event() -> None:
+    response = httpx.post(
+        f"{BASE_URL}/api/v1/events",
+        json={
+            "movie_id": f"movie-{uuid4()}",
+            "movie_title": "Demo Movie",
+            "starts_at": "2026-06-03T19:00:00Z",
+            "place": "Demo cinema",
+            "seats_limit": 5,
+            "description": "Demo watch event",
+        },
+    )
+
+    assert response.status_code == 401
+
+
+def test_event_not_found() -> None:
+    unknown_event_id = uuid4()
+    response = httpx.get(f"{BASE_URL}/api/v1/events/{unknown_event_id}")
+
+    assert response.status_code == 404

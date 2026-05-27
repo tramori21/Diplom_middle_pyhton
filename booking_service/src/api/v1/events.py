@@ -1,11 +1,11 @@
-﻿from uuid import UUID
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import and_, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from api.deps import get_current_user_id
+from api.pagination import Pagination
 from db.postgres import get_session
 from models.booking import Booking
 from models.event import WatchEvent
@@ -14,6 +14,18 @@ from schemas.events import EventCreate, EventResponse
 from services.movies import validate_movie
 
 router = APIRouter()
+
+
+def _active_bookings_subquery():
+    return (
+        select(
+            Booking.event_id.label("event_id"),
+            func.count(Booking.id).label("seats_booked"),
+        )
+        .where(Booking.status == "active")
+        .group_by(Booking.event_id)
+        .subquery()
+    )
 
 
 async def _active_bookings_count(session: AsyncSession, event_id: UUID) -> int:
@@ -26,8 +38,8 @@ async def _active_bookings_count(session: AsyncSession, event_id: UUID) -> int:
     return int(result.scalar_one())
 
 
-async def _to_event_response(session: AsyncSession, event: WatchEvent) -> EventResponse:
-    seats_booked = await _active_bookings_count(session, event.id)
+def _to_event_response(event: WatchEvent, seats_booked: int = 0) -> EventResponse:
+    seats_booked = int(seats_booked or 0)
     return EventResponse(
         id=event.id,
         movie_id=event.movie_id,
@@ -71,24 +83,28 @@ async def create_event(
     await session.commit()
     await session.refresh(event)
 
-    return await _to_event_response(session, event)
+    return _to_event_response(event)
 
 
 @router.get("", response_model=list[EventResponse])
 async def list_events(
-    page_number: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    pagination: Pagination = Depends(),
     session: AsyncSession = Depends(get_session),
 ):
+    bookings_count = _active_bookings_subquery()
     result = await session.execute(
-        select(WatchEvent)
+        select(
+            WatchEvent,
+            func.coalesce(bookings_count.c.seats_booked, 0).label("seats_booked"),
+        )
+        .outerjoin(bookings_count, bookings_count.c.event_id == WatchEvent.id)
         .where(WatchEvent.status == "active")
         .order_by(WatchEvent.starts_at)
-        .offset((page_number - 1) * page_size)
-        .limit(page_size)
+        .offset(pagination.offset)
+        .limit(pagination.page_size)
     )
-    events = result.scalars().all()
-    return [await _to_event_response(session, event) for event in events]
+
+    return [_to_event_response(event, seats_booked) for event, seats_booked in result.all()]
 
 
 @router.get("/bookings/me", response_model=list[MyBookingResponse])
@@ -96,20 +112,21 @@ async def my_bookings(
     user_id: UUID = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_session),
 ):
+    bookings_count = _active_bookings_subquery()
     result = await session.execute(
-        select(Booking)
-        .options(selectinload(Booking.event))
+        select(
+            Booking,
+            WatchEvent,
+            func.coalesce(bookings_count.c.seats_booked, 0).label("seats_booked"),
+        )
+        .join(WatchEvent, Booking.event_id == WatchEvent.id)
+        .outerjoin(bookings_count, bookings_count.c.event_id == WatchEvent.id)
         .where(Booking.user_id == user_id)
         .order_by(Booking.created_at.desc())
     )
-    bookings = result.scalars().all()
 
     items = []
-    for booking in bookings:
-        event_response = None
-        if booking.event:
-            event_response = await _to_event_response(session, booking.event)
-
+    for booking, event, seats_booked in result.all():
         items.append(
             MyBookingResponse(
                 id=booking.id,
@@ -118,7 +135,7 @@ async def my_bookings(
                 status=booking.status,
                 created_at=booking.created_at,
                 updated_at=booking.updated_at,
-                event=event_response,
+                event=_to_event_response(event, seats_booked),
             )
         )
 
@@ -130,13 +147,25 @@ async def get_event(
     event_id: UUID,
     session: AsyncSession = Depends(get_session),
 ):
-    result = await session.execute(select(WatchEvent).where(WatchEvent.id == event_id))
-    event = result.scalar_one_or_none()
+    bookings_count = _active_bookings_subquery()
+    result = await session.execute(
+        select(
+            WatchEvent,
+            func.coalesce(bookings_count.c.seats_booked, 0).label("seats_booked"),
+        )
+        .outerjoin(bookings_count, bookings_count.c.event_id == WatchEvent.id)
+        .where(
+            WatchEvent.id == event_id,
+            WatchEvent.status == "active",
+        )
+    )
+    row = result.one_or_none()
 
-    if not event:
+    if not row:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Event not found")
 
-    return await _to_event_response(session, event)
+    event, seats_booked = row
+    return _to_event_response(event, seats_booked)
 
 
 @router.post("/{event_id}/booking", response_model=BookingResponse, status_code=status.HTTP_201_CREATED)
@@ -227,4 +256,5 @@ async def cancel_event(
     await session.commit()
     await session.refresh(event)
 
-    return await _to_event_response(session, event)
+    seats_booked = await _active_bookings_count(session, event.id)
+    return _to_event_response(event, seats_booked)

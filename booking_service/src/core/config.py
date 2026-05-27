@@ -1,4 +1,4 @@
-﻿from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -10,15 +10,15 @@ class Settings(BaseSettings):
 
     postgres_db: str = "booking"
     postgres_user: str = "app"
-    postgres_password: str = "123qwe"
+    postgres_password: str
     postgres_host: str = "127.0.0.1"
-    postgres_port: int = 5435
+    postgres_port: int = 5432
 
-    auth_jwt_secret: str = "change_me"
+    auth_jwt_secret: str
     auth_jwt_algorithm: str = "HS256"
 
     movies_api_url: str = "http://127.0.0.1:8000"
-    movies_api_validate: bool = False
+    movies_api_validate: bool = True
 
     @property
     def database_dsn(self) -> str:

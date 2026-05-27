@@ -1,7 +1,5 @@
 # Дипломный проект: сервис бронирования мест на совместные просмотры
 
-# Ссылка на репозиторий - https://github.com/tramori21/Diplom_middle_pyhton
-
 ## Идея
 
 Дипломный модуль расширяет онлайн-кинотеатр отдельным сервисом бронирования мест на совместные просмотры фильмов.
@@ -47,10 +45,23 @@
 
 ```text
 booking_service/        сервис бронирования
-docs/                   требования, архитектура, API, план и заметки для защиты
+docs/                   требования, архитектура, API, план и сценарий демо
 scripts/                локальные скрипты проверки и демо
 docker-compose.yml      запуск booking_service и PostgreSQL
+.env.example            пример локальных переменных окружения
 ```
+
+## Переменные окружения
+
+Секреты не хранятся в `docker-compose.yml` и в коде приложения.
+
+Для локального запуска можно создать `.env` из `.env.example` и заполнить значения:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Скрипты `scripts/check.ps1` и `scripts/demo.ps1` создают локальный `.env` автоматически, если его ещё нет.
 
 ## Связь с онлайн-кинотеатром
 
@@ -61,8 +72,7 @@ docker-compose.yml      запуск booking_service и PostgreSQL
 - Auth-сервис — авторизация пользователей и выдача JWT;
 - Movies API — получение информации о фильмах по `movie_id`.
 
-В MVP сервис можно запускать отдельно. Проверка фильма через Movies API отключена переменной `MOVIES_API_VALIDATE=false`, чтобы демонстрация была стабильной и не зависела от запуска других сервисов.
-
+В коде предусмотрена опциональная проверка фильма через Movies API. По умолчанию в настройках приложения валидация включена, а для локального автономного стенда её можно отключить через `MOVIES_API_VALIDATE=false`.
 
 ## Работа в PyCharm
 
@@ -74,43 +84,36 @@ docker-compose.yml      запуск booking_service и PostgreSQL
 2. Открыть встроенный терминал PyCharm.
 3. Запустить полную проверку:
 
-``powershell
+```powershell
 .\scripts\check.ps1
-``
+```
 
 4. После успешного запуска открыть Swagger в браузере:
 
-``text
+```text
 http://127.0.0.1:8010/docs
-``
+```
 
 Для демонстрации основного сценария можно запустить:
 
-``powershell
+```powershell
 .\scripts\demo.ps1
-``
+```
 
 Основные файлы для просмотра реализации:
 
-``text
+```text
 booking_service/src/api/v1/events.py
 booking_service/migrations/versions/20260526_0001_initial.py
 booking_service/src/api/deps.py
 booking_service/tests/integration/test_booking_api.py
-``
+```
 
 ## Локальный запуск
 
 ```powershell
 cd <папка_проекта>
-docker compose up -d --build
-docker compose ps
-```
-
-Проверка health:
-
-```powershell
-Invoke-RestMethod -Method GET -Uri "http://127.0.0.1:8010/health"
+.\scripts\check.ps1
 ```
 
 Swagger открывать в браузере:
@@ -120,14 +123,6 @@ http://127.0.0.1:8010/docs
 ```
 
 ## Тесты
-
-```powershell
-cd <папка_проекта>
-docker compose up -d --build
-docker compose exec -T booking_service pytest -q /app/tests
-```
-
-## Полная проверка
 
 ```powershell
 cd <папка_проекта>

@@ -1,14 +1,12 @@
 services:
   booking_pg:
     image: postgres:16
-    environment:
-      POSTGRES_DB: booking
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: 123qwe
+    env_file:
+      - .env
     ports:
       - "5435:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app -d booking"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 15
@@ -17,22 +15,8 @@ services:
     build:
       context: ./booking_service
       dockerfile: Dockerfile
-    environment:
-      PROJECT_NAME: booking_service
-      APP_HOST: 0.0.0.0
-      APP_PORT: 8010
-
-      POSTGRES_DB: booking
-      POSTGRES_USER: app
-      POSTGRES_PASSWORD: 123qwe
-      POSTGRES_HOST: booking_pg
-      POSTGRES_PORT: 5432
-
-      AUTH_JWT_SECRET: change_me
-      AUTH_JWT_ALGORITHM: HS256
-
-      MOVIES_API_URL: http://movies_api:8000
-      MOVIES_API_VALIDATE: "false"
+    env_file:
+      - .env
     ports:
       - "8010:8010"
     depends_on:

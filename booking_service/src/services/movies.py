@@ -1,7 +1,11 @@
-﻿from fastapi import HTTPException, status
+import logging
+
 import httpx
+from fastapi import HTTPException, status
 
 from core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 async def validate_movie(movie_id: str) -> dict | None:
@@ -13,11 +17,12 @@ async def validate_movie(movie_id: str) -> dict | None:
     try:
         async with httpx.AsyncClient(timeout=3.0) as client:
             response = await client.get(url)
-    except httpx.HTTPError:
+    except httpx.HTTPError as exc:
+        logger.exception("Movies API call failed for movie_id=%s", movie_id)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Movies API unavailable",
-        )
+        ) from exc
 
     if response.status_code == status.HTTP_404_NOT_FOUND:
         raise HTTPException(
@@ -26,6 +31,11 @@ async def validate_movie(movie_id: str) -> dict | None:
         )
 
     if response.status_code >= 400:
+        logger.warning(
+            "Movies API returned unexpected status %s for movie_id=%s",
+            response.status_code,
+            movie_id,
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Movies API error",

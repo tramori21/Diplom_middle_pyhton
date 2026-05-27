@@ -1,10 +1,9 @@
-﻿from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
 
 from jose import jwt
 
-SECRET = "change_me"
-ALGORITHM = "HS256"
+from core.config import settings
 
 
 def create_access_token(user_id: str) -> str:
@@ -16,7 +15,11 @@ def create_access_token(user_id: str) -> str:
         "exp": int((now + timedelta(hours=12)).timestamp()),
         "jti": str(uuid4()),
     }
-    return jwt.encode(payload, SECRET, algorithm=ALGORITHM)
+    return jwt.encode(
+        payload,
+        settings.auth_jwt_secret,
+        algorithm=settings.auth_jwt_algorithm,
+    )
 
 
 if __name__ == "__main__":
